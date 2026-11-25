@@ -1,10 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openDatabase, type DatabaseContext } from "./database";
 import { createAutomaticBackup, createBackupFolder, restoreDatabaseBackup } from "./backup";
 import { BusinessService } from "./service";
+import { createWordDocument, type WordDocumentImage } from "./word-export";
 import type { BusinessSettings, DocumentRecord } from "../shared/types";
 
 let context: DatabaseContext;
@@ -140,6 +141,38 @@ async function printDocument(id: number, exportPdf: boolean): Promise<string | n
   }
 }
 
+function wordImage(filePath: string): WordDocumentImage | undefined {
+  if (!filePath) return undefined;
+  const image = nativeImage.createFromPath(filePath);
+  if (image.isEmpty()) throw new Error(`تعذر قراءة صورة المستند: ${filePath}`);
+  const dimensions = image.getSize();
+  const scale = Math.min(1, 100 / dimensions.width, 60 / dimensions.height);
+  return {
+    data: image.toPNG(),
+    width: Math.max(1, Math.round(dimensions.width * scale)),
+    height: Math.max(1, Math.round(dimensions.height * scale)),
+  };
+}
+
+async function exportDocumentWord(id: number): Promise<string | null> {
+  const document = service.getDocument(id);
+  if (!document) throw new Error("Document introuvable.");
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow!, {
+    title: "حفظ المستند بصيغة Word",
+    defaultPath: `${document.number ?? "document"}.docx`,
+    filters: [{ name: "Microsoft Word", extensions: ["docx"] }],
+  });
+  if (canceled || !filePath) return null;
+  const business = JSON.parse(document.business_snapshot) as BusinessSettings;
+  const buffer = await createWordDocument(document, {
+    logo: wordImage(business.logo_path),
+    signature: wordImage(business.signature_path),
+  });
+  const destination = path.extname(filePath).toLowerCase() === ".docx" ? filePath : `${filePath}.docx`;
+  fs.writeFileSync(destination, buffer);
+  return destination;
+}
+
 function registerHandlers(): void {
   ipcMain.handle("business:get", () => service.getBusinessSettings());
   ipcMain.handle("business:save", (_event, value: BusinessSettings) => service.saveBusinessSettings(value));
@@ -168,6 +201,7 @@ function registerHandlers(): void {
   ipcMain.handle("payments:add", (_event, value) => service.addPayment(value));
   ipcMain.handle("documents:history", (_event, id: number) => service.getHistory(id));
   ipcMain.handle("documents:print", (_event, id: number, exportPdf: boolean) => printDocument(id, exportPdf));
+  ipcMain.handle("documents:export-word", (_event, id: number) => exportDocumentWord(id));
   ipcMain.handle("data:open-folder", () => shell.openPath(context.userDataPath));
   ipcMain.handle("backup:create", async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow!, {

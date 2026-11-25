@@ -5,7 +5,9 @@ const os = require("node:os");
 const path = require("node:path");
 const { openDatabase } = require("../dist/main/electron/database.js");
 const { BusinessService } = require("../dist/main/electron/service.js");
+const { createWordDocument } = require("../dist/main/electron/word-export.js");
 const { createAutomaticBackup, createBackupFolder, restoreDatabaseBackup, verifyBackup } = require("../dist/main/electron/backup.js");
+const { unzipSync } = require("fflate");
 
 const temporaryFolders = [];
 const openContexts = [];
@@ -163,6 +165,19 @@ test("daily income is calculated from opening and closing values and updates one
   assert.throws(() => service.saveDailyIncome({
     business_date: "2026-11-26", opening_amount: -1, closing_amount: 20,
   }), /مبلغاً صحيحاً/);
+});
+
+test("issued documents export as a valid DOCX archive", async () => {
+  const { service } = setup();
+  const invoice = service.saveDocument(draft("INVOICE"));
+  const output = await createWordDocument(invoice);
+  assert.equal(output.subarray(0, 2).toString("ascii"), "PK");
+  const contents = unzipSync(output);
+  assert.ok(contents["[Content_Types].xml"]);
+  const documentXml = Buffer.from(contents["word/document.xml"]).toString("utf8");
+  assert.match(documentXml, /FACTURE/);
+  assert.match(documentXml, /ليلى بن صالح/);
+  assert.match(documentXml, /w:bidi/);
 });
 
 test("Word files are stored locally, renamed and copied back with their original content", () => {

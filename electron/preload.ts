@@ -24,6 +24,7 @@ const api: AppApi = {
   addPayment: (value) => ipcRenderer.invoke("payments:add", value),
   getHistory: (id) => ipcRenderer.invoke("documents:history", id),
   printDocument: (id, exportPdf) => ipcRenderer.invoke("documents:print", id, exportPdf),
+  exportDocumentWord: (id) => ipcRenderer.invoke("documents:export-word", id),
   createBackup: () => ipcRenderer.invoke("backup:create"),
   restoreBackup: () => ipcRenderer.invoke("backup:restore"),
   openDataFolder: () => ipcRenderer.invoke("data:open-folder"),
