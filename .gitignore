@@ -1,0 +1,22 @@
+node_modules/
+dist/
+release/
+
+# Local application databases and user files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+automatic-backups/
+attachments/
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+npm-debug.log*

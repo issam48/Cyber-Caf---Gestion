@@ -1,0 +1,59 @@
+{
+  "name": "cyber-cafe-business-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline business settings and document management for a cyber cafe",
+  "main": "dist/main/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"tsc -p tsconfig.main.json --watch\" \"vite --host 127.0.0.1\" \"wait-on dist/main/electron/main.js tcp:5173 && electron .\"",
+    "postinstall": "electron-builder install-app-deps",
+    "build": "npm run build:main && npm run typecheck && vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
+    "start": "electron .",
+    "test": "npm run build:main && node tests/run.cjs",
+    "package": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "concurrently": "^9.2.0",
+    "electron": "^38.1.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3",
+    "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "dz.cybercafe.businessmanager",
+    "productName": "Cyber Café - Gestion",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "allowScripts": {
+    "electron@38.8.6": true,
+    "better-sqlite3@12.11.1": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.2": true
+  }
+}
