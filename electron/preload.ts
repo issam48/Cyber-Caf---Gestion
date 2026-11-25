@@ -35,6 +35,7 @@ const api: AppApi = {
   renameFile: (id, displayName) => ipcRenderer.invoke("files:rename", id, displayName),
   setFileCategory: (id, categoryId) => ipcRenderer.invoke("files:set-category", id, categoryId),
   downloadFile: (id) => ipcRenderer.invoke("files:download", id),
+  openFile: (id) => ipcRenderer.invoke("files:open", id),
 };
 
 contextBridge.exposeInMainWorld("appApi", api);

@@ -151,6 +151,8 @@ test("Word files are stored locally, renamed and copied back with their original
   const uploaded = service.addManagedFile(source, "نموذج تسجيل", 1);
   assert.equal(uploaded.display_name, "نموذج تسجيل");
   assert.equal(uploaded.extension, ".docx");
+  assert.equal(fs.readFileSync(service.getManagedFilePath(uploaded.id), "utf8"), "word document bytes");
+  assert.throws(() => service.getManagedFilePath(9999), /الملف غير موجود/);
   assert.equal(service.listFiles("تسجيل", null).length, 1);
   const renamed = service.renameManagedFile(uploaded.id, "استمارة العميل");
   assert.equal(renamed.display_name, "استمارة العميل");

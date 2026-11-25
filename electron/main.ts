@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { openDatabase, type DatabaseContext } from "./database";
 import { createAutomaticBackup, createBackupFolder, restoreDatabaseBackup } from "./backup";
 import { BusinessService } from "./service";
@@ -214,6 +215,17 @@ function registerHandlers(): void {
     });
     if (result.canceled || !result.filePath) return null;
     return service.copyManagedFile(id, result.filePath);
+  });
+  ipcMain.handle("files:open", async (_event, id: number) => {
+    const file = service.getManagedFile(id);
+    if (!file) throw new Error("الملف غير موجود.");
+    const filePath = service.getManagedFilePath(id);
+    if (file.extension === ".pdf") {
+      await shell.openExternal(pathToFileURL(filePath).href);
+      return;
+    }
+    const error = await shell.openPath(filePath);
+    if (error) throw new Error(`تعذر فتح الملف في التطبيق الافتراضي: ${error}`);
   });
 }
 

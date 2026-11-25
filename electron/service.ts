@@ -521,6 +521,16 @@ export class BusinessService {
     return destination;
   }
 
+  getManagedFilePath(id: number): string {
+    const file = this.context.db.prepare(
+      "SELECT stored_name FROM managed_files WHERE id=?",
+    ).get(id) as { stored_name: string } | undefined;
+    if (!file) throw new Error("الملف غير موجود.");
+    const source = path.join(this.context.wordDocumentsPath, file.stored_name);
+    if (!fs.existsSync(source)) throw new Error("الملف محفوظ في السجل لكن محتواه غير موجود على القرص.");
+    return source;
+  }
+
   getManagedFile(id: number): ManagedFileRecord | null {
     return (this.context.db.prepare(
       `SELECT m.id,m.display_name,m.original_name,m.extension,m.category_id,c.name AS category_name,m.size_bytes,m.created_at

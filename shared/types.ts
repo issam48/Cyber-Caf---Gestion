@@ -176,6 +176,7 @@ export interface AppApi {
   renameFile(id: number, displayName: string): Promise<ManagedFileRecord>;
   setFileCategory(id: number, categoryId: number): Promise<ManagedFileRecord>;
   downloadFile(id: number): Promise<string | null>;
+  openFile(id: number): Promise<void>;
 }
 
 declare global {

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Archive, ArrowDown, ArrowLeftRight, ArrowUp, BadgeDollarSign, Banknote, Building2, Check,
-  ChevronDown, CirclePlus, ClipboardList, Download, FileClock, FilePlus2, FileText, FileUp,
-  FolderOpen, Gauge, History, ImagePlus, Landmark, Printer, ReceiptText, RotateCcw, Save,
-  Search, Settings, ShieldCheck, Trash2, Users, X,
+  ChevronDown, CirclePlus, ClipboardList, Download, ExternalLink, FileClock, FilePlus2,
+  FileText, FileUp, FolderOpen, Gauge, History, ImagePlus, Landmark, Printer, ReceiptText,
+  RotateCcw, Save, Search, Settings, ShieldCheck, Trash2, Users, X,
 } from "lucide-react";
 import type {
   BusinessSettings, Customer, CustomerSummary, DocumentDraft, DocumentFilters, DocumentItem,
@@ -208,6 +208,9 @@ export function App() {
     const destination = await run(() => window.appApi.downloadFile(id));
     if (destination) setNotice(`تم حفظ نسخة الملف في: ${destination}`);
   }
+  async function openManagedFile(id: number) {
+    await run(() => window.appApi.openFile(id));
+  }
 
   const counts = useMemo(() => ({
     invoices: documents.filter((d) => d.type === "INVOICE").length,
@@ -259,7 +262,7 @@ export function App() {
             setUploadCategoryId={setUploadCategoryId} newCategoryName={newCategoryName} setNewCategoryName={setNewCategoryName}
             sort={fileSort} setSort={setFileSort} onUpload={uploadManagedFile} onAddCategory={addFileCategory}
             onReorderCategories={reorderFileCategories} onRename={renameManagedFile}
-            onSetCategory={setManagedFileCategory} onDownload={downloadManagedFile} />}
+            onSetCategory={setManagedFileCategory} onDownload={downloadManagedFile} onOpen={openManagedFile} />}
           {page === "backup" && <BackupPage onError={(message) => setError(message)} onNotice={setNotice} />}
         </>}
       </section>
@@ -665,7 +668,7 @@ function BackupPage({ onError, onNotice }: { onError: (message: string) => void;
 
 function FilesPage({ files, categories, query, setQuery, categoryFilter, setCategoryFilter, displayName, setDisplayName,
   uploadCategoryId, setUploadCategoryId, newCategoryName, setNewCategoryName, sort, setSort, onUpload, onAddCategory,
-  onReorderCategories, onRename, onSetCategory, onDownload }: {
+  onReorderCategories, onRename, onSetCategory, onDownload, onOpen }: {
   files: ManagedFileRecord[];
   categories: FileCategoryRecord[];
   query: string;
@@ -686,6 +689,7 @@ function FilesPage({ files, categories, query, setQuery, categoryFilter, setCate
   onRename: (id: number, name: string) => Promise<boolean>;
   onSetCategory: (id: number, categoryId: number) => void;
   onDownload: (id: number) => void;
+  onOpen: (id: number) => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -741,9 +745,13 @@ function FilesPage({ files, categories, query, setQuery, categoryFilter, setCate
         <div className="file-category-groups">{groupedFiles.map(({ category, files: categoryFiles }) => <section className="file-category-group" key={category.id}>
           <div className="file-category-title"><h4>{category.name}</h4><span>{categoryFiles.length} ملف</span></div>
           {categoryFiles.length === 0 ? <div className="empty-category">لا توجد ملفات في هذا التصنيف بعد.</div> :
-            <div className="word-file-list">{categoryFiles.map((file) => <div className="word-file-row" key={file.id}>
+            <div className="word-file-list">{categoryFiles.map((file) => <div className="word-file-row" key={file.id}
+              onDoubleClick={(event) => {
+                if (event.target instanceof HTMLElement && event.target.closest("button,select,input")) return;
+                onOpen(file.id);
+              }}>
               <span className={`word-extension ext-${file.extension.slice(1)}`}>{file.extension.slice(1).toUpperCase()}</span>
-              <div className="word-file-details">
+              <div className="word-file-details" title="انقر مرتين لفتح الملف">
                 {editingId === file.id ? <input className="word-name-input" aria-label="الاسم الجديد" autoFocus maxLength={150} value={editingName} onChange={(event) => setEditingName(event.target.value)} /> :
                   <b>{file.display_name}.{file.extension.slice(1)}</b>}
                 <small>{file.original_name} · {formatBytes(file.size_bytes)} · {formatDate(file.created_at)}</small>
@@ -758,6 +766,7 @@ function FilesPage({ files, categories, query, setQuery, categoryFilter, setCate
                   }}><Save size={14} /> حفظ الاسم</button>
                   <button className="button subtle small" onClick={() => setEditingId(null)}>إلغاء</button>
                 </> : <button className="button outline small" onClick={() => { setEditingId(file.id); setEditingName(file.display_name); }}>إعادة التسمية</button>}
+                <button className="button outline small" title="فتح الملف" onClick={() => onOpen(file.id)}><ExternalLink size={14} /> فتح</button>
                 <button className="button outline small" onClick={() => onDownload(file.id)}><Download size={15} /> تنزيل</button>
               </div>
             </div>)}</div>}
