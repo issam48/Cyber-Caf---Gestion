@@ -6,11 +6,11 @@ import {
   RotateCcw, Save, Search, Settings, ShieldCheck, Trash2, Users, X,
 } from "lucide-react";
 import type {
-  BusinessSettings, Customer, CustomerSummary, DocumentDraft, DocumentFilters, DocumentItem,
+  BusinessSettings, Customer, CustomerSummary, DailyIncomeRecord, DocumentDraft, DocumentFilters, DocumentItem,
   DocumentRecord, DocumentType, FileCategoryRecord, ManagedFileRecord, TaxSettings,
 } from "../shared/types";
 
-type Page = "dashboard" | "documents" | "customers" | "shop" | "tax" | "backup" | "files";
+type Page = "dashboard" | "documents" | "customers" | "income" | "shop" | "tax" | "backup" | "files";
 type LineDraft = DocumentDraft["items"][number];
 const emptyBusiness: BusinessSettings = {
   name: "", address: "", phone: "", email: "", website: "", rc: "", nif: "", nis: "", ai: "",
@@ -223,6 +223,7 @@ export function App() {
     { key: "dashboard", label: "الرئيسية", icon: Gauge },
     { key: "documents", label: "المستندات", icon: Archive },
     { key: "customers", label: "العملاء", icon: Users },
+    { key: "income", label: "الدخل اليومي", icon: Banknote },
     { key: "shop", label: "معلومات المحل", icon: Building2 },
     { key: "tax", label: "الضرائب والترقيم", icon: Settings },
     { key: "files", label: "الملفات", icon: FolderOpen },
@@ -254,6 +255,7 @@ export function App() {
             onSelect={selectCustomer} onNew={() => { setCustomerForm(customerBlank()); setEditingCustomer(null); setShowCustomerForm(true); }}
             onEdit={(c) => { setCustomerForm({ name: c.name, address: c.address, phone: c.phone, email: c.email, nif: c.nif, notes: c.notes }); setEditingCustomer(c.id); setShowCustomerForm(true); }}
             onOpen={openDocument} />}
+          {page === "income" && <DailyIncomePage onError={(message) => setError(message)} onNotice={(message) => setNotice(message)} />}
           {page === "shop" && <ShopSettings business={business} setBusiness={setBusiness} onSave={saveBusiness} onImage={chooseImage} />}
           {page === "tax" && <TaxSettingsPage tax={tax} setTax={setTax} sequences={sequences} setSequences={setSequences} onSaveTax={saveTax} onSaveSequences={saveSequenceSettings} />}
           {page === "files" && <FilesPage files={managedFiles} categories={fileCategories} query={fileQuery}
@@ -302,7 +304,7 @@ export function App() {
 }
 
 function pageTitle(page: Page) {
-  return ({ dashboard: "لوحة التحكم", documents: "إدارة المستندات", customers: "قاعدة بيانات العملاء", shop: "معلومات المحل", tax: "الضرائب والترقيم", backup: "النسخ الاحتياطي", files: "الملفات" })[page];
+  return ({ dashboard: "لوحة التحكم", documents: "إدارة المستندات", customers: "قاعدة بيانات العملاء", income: "حساب الدخل اليومي", shop: "معلومات المحل", tax: "الضرائب والترقيم", backup: "النسخ الاحتياطي", files: "الملفات" })[page];
 }
 
 function Dashboard({ counts, documents, go, onOpen, onNew }: {
@@ -329,6 +331,98 @@ function Dashboard({ counts, documents, go, onOpen, onNew }: {
 
 function Stat({ icon: Icon, label, value, tone }: { icon: typeof Gauge; label: string; value: string; tone: string }) {
   return <div className="stat-card"><span className={`stat-icon ${tone}`}><Icon size={20} /></span><div><span className="stat-label">{label}</span><strong>{value}</strong></div></div>;
+}
+
+function DailyIncomePage({ onError, onNotice }: { onError: (message: string) => void; onNotice: (message: string) => void }) {
+  const [records, setRecords] = useState<DailyIncomeRecord[]>([]);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const date = new Date();
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  });
+  const [openingAmount, setOpeningAmount] = useState("");
+  const [closingAmount, setClosingAmount] = useState("");
+  const [saving, setSaving] = useState(false);
+  const existing = records.find((record) => record.business_date === selectedDate);
+  const opening = Number(openingAmount);
+  const closing = Number(closingAmount);
+  const calculatedIncome = openingAmount !== "" && closingAmount !== "" &&
+    Number.isFinite(opening) && Number.isFinite(closing) ? closing - opening : null;
+
+  function getErrorMessage(reason: unknown) {
+    return reason instanceof Error ? reason.message : String(reason);
+  }
+
+  useEffect(() => {
+    window.appApi.listDailyIncome().then((items) => {
+      setRecords(items);
+      const current = items.find((record) => record.business_date === selectedDate);
+      if (current) {
+        setOpeningAmount(String(current.opening_amount));
+        setClosingAmount(String(current.closing_amount));
+      }
+    }).catch((reason) => onError(getErrorMessage(reason)));
+  }, []);
+
+  function chooseDate(date: string) {
+    setSelectedDate(date);
+    const record = records.find((item) => item.business_date === date);
+    setOpeningAmount(record ? String(record.opening_amount) : "");
+    setClosingAmount(record ? String(record.closing_amount) : "");
+  }
+
+  async function save() {
+    if (!selectedDate || openingAmount === "" || closingAmount === "" ||
+        !Number.isFinite(opening) || !Number.isFinite(closing) || opening < 0 || closing < 0) {
+      onError("أدخل التاريخ ومبلغي بداية اليوم ونهايته بشكل صحيح.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const saved = await window.appApi.saveDailyIncome({
+        business_date: selectedDate,
+        opening_amount: opening,
+        closing_amount: closing,
+      });
+      setRecords((items) => [saved, ...items.filter((item) => item.business_date !== saved.business_date)]
+        .sort((a, b) => b.business_date.localeCompare(a.business_date)).slice(0, 366));
+      setOpeningAmount(String(saved.opening_amount));
+      setClosingAmount(String(saved.closing_amount));
+      onError("");
+      onNotice("تم حفظ حساب دخل اليوم.");
+    } catch (reason) {
+      onError(getErrorMessage(reason));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <div className="daily-income-layout">
+    <div className="panel settings-panel daily-income-form">
+      <div className="panel-heading"><div><h3>تسجيل دخل اليوم</h3><p>أدخل المبلغ الموجود في بداية اليوم ونهايته لحساب الفرق تلقائياً.</p></div><span className="soft-icon teal-icon"><Banknote size={20} /></span></div>
+      <div className="daily-income-fields">
+        <Field label="التاريخ"><input type="date" value={selectedDate} onChange={(event) => chooseDate(event.target.value)} /></Field>
+        <Field label="المدخول في بداية اليوم (دج)"><input type="number" min="0" step="0.01" value={openingAmount} onChange={(event) => setOpeningAmount(event.target.value)} placeholder="0.00" /></Field>
+        <Field label="المدخول في نهاية اليوم (دج)"><input type="number" min="0" step="0.01" value={closingAmount} onChange={(event) => setClosingAmount(event.target.value)} placeholder="0.00" /></Field>
+      </div>
+      <div className="daily-income-result">
+        <span>{calculatedIncome !== null && calculatedIncome < 0 ? "الفرق بين بداية اليوم ونهايته" : "دخل اليوم (نهاية اليوم − بداية اليوم)"}</span>
+        <strong>{calculatedIncome === null ? "—" : `${money(calculatedIncome)} دج`}</strong>
+      </div>
+      <div className="form-footer"><span className="muted-text">{existing ? "يوجد سجل لهذا التاريخ؛ حفظ التغييرات سيحدّثه." : "يُحفظ سجل واحد لكل تاريخ ويمكن تعديله لاحقاً."}</span>
+        <button className="button primary" onClick={() => void save()} disabled={saving}><Save size={17} /> {saving ? "جارٍ الحفظ…" : existing ? "تحديث سجل اليوم" : "حفظ سجل اليوم"}</button></div>
+    </div>
+    <div className="panel">
+      <div className="panel-heading"><div><h3>سجل الدخل اليومي</h3><p>آخر 366 يوماً مسجلاً</p></div><span className="mini-badge"><History size={14} /> محفوظ محلياً</span></div>
+      {records.length === 0 ? <div className="empty-state"><Banknote size={25} /><b>لا توجد سجلات دخل بعد</b><span>أدخل مبالغ بداية اليوم ونهايته ثم احفظ السجل.</span></div> :
+        <div className="daily-income-history">
+          <div className="daily-income-history-head"><span>التاريخ</span><span>بداية اليوم</span><span>نهاية اليوم</span><span>دخل اليوم</span></div>
+          {records.map((record) => <button key={record.id} className={`daily-income-history-row ${record.business_date === selectedDate ? "selected" : ""}`} onClick={() => chooseDate(record.business_date)}>
+            <span>{formatDate(record.business_date)}</span><span>{money(record.opening_amount)} دج</span><span>{money(record.closing_amount)} دج</span>
+            <b>{money(record.daily_income)} دج</b>
+          </button>)}
+        </div>}
+    </div>
+  </div>;
 }
 
 function DocumentsPage({ documents, filters, setFilters, onNew, onOpen, onPayment, onCancel, onRefresh, onAct, onError }: {

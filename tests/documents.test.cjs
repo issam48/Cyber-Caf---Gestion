@@ -144,6 +144,27 @@ test("document archive supports amount range filters", () => {
   assert.equal(result[0].total_ttc, 500);
 });
 
+test("daily income is calculated from opening and closing values and updates one record per date", () => {
+  const { service, context } = setup();
+  const first = service.saveDailyIncome({
+    business_date: "2026-11-25", opening_amount: 1250, closing_amount: 1875.5,
+  });
+  assert.equal(first.daily_income, 625.5);
+  const updated = service.saveDailyIncome({
+    business_date: "2026-11-25", opening_amount: 1300, closing_amount: 1900,
+  });
+  assert.equal(updated.id, first.id);
+  assert.equal(updated.daily_income, 600);
+  assert.equal(service.listDailyIncome().length, 1);
+  assert.equal(context.db.pragma("user_version", { simple: true }), 4);
+  assert.throws(() => service.saveDailyIncome({
+    business_date: "2026-02-30", opening_amount: 10, closing_amount: 20,
+  }), /تاريخاً صحيحاً/);
+  assert.throws(() => service.saveDailyIncome({
+    business_date: "2026-11-26", opening_amount: -1, closing_amount: 20,
+  }), /مبلغاً صحيحاً/);
+});
+
 test("Word files are stored locally, renamed and copied back with their original content", () => {
   const { service, context } = setup();
   const source = path.join(context.userDataPath, "original.docx");

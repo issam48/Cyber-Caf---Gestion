@@ -5,6 +5,7 @@ import type {
   BusinessSettings,
   Customer,
   CustomerSummary,
+  DailyIncomeRecord,
   DocumentDraft,
   DocumentFilters,
   DocumentItem,
@@ -106,6 +107,39 @@ export class BusinessService {
     return this.context.db.prepare(
       "SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? OR email LIKE ? OR nif LIKE ? ORDER BY name COLLATE NOCASE LIMIT 500",
     ).all(q, q, q, q) as Customer[];
+  }
+
+  listDailyIncome(): DailyIncomeRecord[] {
+    return this.context.db.prepare(
+      "SELECT * FROM daily_income ORDER BY business_date DESC LIMIT 366",
+    ).all() as DailyIncomeRecord[];
+  }
+
+  saveDailyIncome(value: Pick<DailyIncomeRecord, "business_date" | "opening_amount" | "closing_amount">): DailyIncomeRecord {
+    const date = value.business_date;
+    const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00.000Z`) : null;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
+      throw new Error("أدخل تاريخاً صحيحاً.");
+    }
+    for (const [label, amount] of [["بداية اليوم", value.opening_amount], ["نهاية اليوم", value.closing_amount]] as const) {
+      if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
+        throw new Error(`أدخل مبلغاً صحيحاً غير سالب لـ${label}.`);
+      }
+    }
+    const opening = money(value.opening_amount);
+    const closing = money(value.closing_amount);
+    this.context.db.prepare(
+      `INSERT INTO daily_income(business_date, opening_amount, closing_amount, daily_income, updated_at)
+       VALUES(?, ?, ?, ?, ?)
+       ON CONFLICT(business_date) DO UPDATE SET
+         opening_amount=excluded.opening_amount, closing_amount=excluded.closing_amount,
+         daily_income=excluded.daily_income, updated_at=excluded.updated_at`,
+    ).run(date, opening, closing, money(closing - opening), now());
+    const record = this.context.db.prepare(
+      "SELECT * FROM daily_income WHERE business_date = ?",
+    ).get(date) as DailyIncomeRecord | undefined;
+    if (!record) throw new Error("تعذر حفظ حساب الدخل اليومي.");
+    return record;
   }
 
   saveCustomer(value: Partial<Customer>): Customer {

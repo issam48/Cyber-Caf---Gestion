@@ -36,6 +36,8 @@ const api: AppApi = {
   setFileCategory: (id, categoryId) => ipcRenderer.invoke("files:set-category", id, categoryId),
   downloadFile: (id) => ipcRenderer.invoke("files:download", id),
   openFile: (id) => ipcRenderer.invoke("files:open", id),
+  listDailyIncome: () => ipcRenderer.invoke("income:list"),
+  saveDailyIncome: (value) => ipcRenderer.invoke("income:save", value),
 };
 
 contextBridge.exposeInMainWorld("appApi", api);

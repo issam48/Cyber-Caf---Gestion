@@ -123,6 +123,15 @@ CREATE INDEX IF NOT EXISTS idx_managed_files_category ON managed_files(category_
 INSERT OR IGNORE INTO managed_files(id, display_name, original_name, stored_name, extension, category_id, size_bytes, created_at)
 SELECT id, display_name, original_name, stored_name, extension, 1, size_bytes, created_at
 FROM word_documents;
+CREATE TABLE IF NOT EXISTS daily_income (
+  id INTEGER PRIMARY KEY,
+  business_date TEXT NOT NULL UNIQUE,
+  opening_amount REAL NOT NULL CHECK (opening_amount >= 0),
+  closing_amount REAL NOT NULL CHECK (closing_amount >= 0),
+  daily_income REAL NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_daily_income_date ON daily_income(business_date DESC);
 `;
 
 export interface DatabaseContext {
@@ -144,13 +153,13 @@ export function openDatabase(userDataPath: string): DatabaseContext {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   const version = db.pragma("user_version", { simple: true }) as number;
-  if (version > 3) {
+  if (version > 4) {
     db.close();
     throw new Error(`قاعدة البيانات بإصدار أحدث غير مدعوم: ${version}.`);
   }
   const migrate = db.transaction(() => {
     db.exec(schema);
-    db.pragma("user_version = 3");
+    db.pragma("user_version = 4");
   });
   migrate();
   const insertSequence = db.prepare(

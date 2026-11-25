@@ -142,6 +142,15 @@ export interface ManagedFileRecord {
   created_at: string;
 }
 
+export interface DailyIncomeRecord {
+  id: number;
+  business_date: string;
+  opening_amount: number;
+  closing_amount: number;
+  daily_income: number;
+  updated_at: string;
+}
+
 export interface AppApi {
   getBusinessSettings(): Promise<BusinessSettings>;
   saveBusinessSettings(value: BusinessSettings): Promise<BusinessSettings>;
@@ -177,6 +186,8 @@ export interface AppApi {
   setFileCategory(id: number, categoryId: number): Promise<ManagedFileRecord>;
   downloadFile(id: number): Promise<string | null>;
   openFile(id: number): Promise<void>;
+  listDailyIncome(): Promise<DailyIncomeRecord[]>;
+  saveDailyIncome(value: Pick<DailyIncomeRecord, "business_date" | "opening_amount" | "closing_amount">): Promise<DailyIncomeRecord>;
 }
 
 declare global {

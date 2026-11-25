@@ -227,6 +227,8 @@ function registerHandlers(): void {
     const error = await shell.openPath(filePath);
     if (error) throw new Error(`تعذر فتح الملف في التطبيق الافتراضي: ${error}`);
   });
+  ipcMain.handle("income:list", () => service.listDailyIncome());
+  ipcMain.handle("income:save", (_event, value) => service.saveDailyIncome(value));
 }
 
 app.whenReady().then(() => {
