@@ -186,29 +186,34 @@ function registerHandlers(): void {
       throw error;
     }
   });
-  ipcMain.handle("word-files:list", (_event, search: string) => service.listWordFiles(search));
-  ipcMain.handle("word-files:upload", async (_event, displayName: string) => {
+  ipcMain.handle("files:list", (_event, search: string, categoryId: number | null) => service.listFiles(search, categoryId));
+  ipcMain.handle("files:categories", () => service.listFileCategories());
+  ipcMain.handle("files:add-category", (_event, name: string) => service.addFileCategory(name));
+  ipcMain.handle("files:reorder-categories", (_event, ids: number[]) => service.reorderFileCategories(ids));
+  ipcMain.handle("files:upload", async (_event, displayName: string, categoryId: number) => {
     const result = await dialog.showOpenDialog(mainWindow!, {
-      title: "اختر ملف Word",
+      title: "اختر ملفاً",
       properties: ["openFile"],
-      filters: [{ name: "مستندات Word", extensions: ["doc", "docx"] }],
+      filters: [{ name: "مستندات Word وPDF وExcel", extensions: ["doc", "docx", "pdf", "xls", "xlsx"] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    return service.addWordFile(result.filePaths[0], displayName);
+    return service.addManagedFile(result.filePaths[0], displayName, categoryId);
   });
-  ipcMain.handle("word-files:rename", (_event, id: number, displayName: string) =>
-    service.renameWordFile(id, displayName));
-  ipcMain.handle("word-files:download", async (_event, id: number) => {
-    const file = service.getWordFile(id);
-    if (!file) throw new Error("ملف Word غير موجود.");
+  ipcMain.handle("files:rename", (_event, id: number, displayName: string) =>
+    service.renameManagedFile(id, displayName));
+  ipcMain.handle("files:set-category", (_event, id: number, categoryId: number) =>
+    service.setManagedFileCategory(id, categoryId));
+  ipcMain.handle("files:download", async (_event, id: number) => {
+    const file = service.getManagedFile(id);
+    if (!file) throw new Error("الملف غير موجود.");
     const safeName = file.display_name.replace(/[<>:"\\|?*]/g, "_").replace(/\//g, "_").replace(/[. ]+$/g, "").trim() || "word-document";
     const result = await dialog.showSaveDialog(mainWindow!, {
-      title: "حفظ نسخة من ملف Word",
+      title: "حفظ نسخة من الملف",
       defaultPath: `${safeName}${file.extension}`,
-      filters: [{ name: "مستندات Word", extensions: [file.extension.slice(1)] }],
+      filters: [{ name: "الملف الأصلي", extensions: [file.extension.slice(1)] }],
     });
     if (result.canceled || !result.filePath) return null;
-    return service.copyWordFile(id, result.filePath);
+    return service.copyManagedFile(id, result.filePath);
   });
 }
 

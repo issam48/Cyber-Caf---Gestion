@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Archive, ArrowLeftRight, BadgeDollarSign, Banknote, Building2, Check, ChevronDown, CirclePlus,
-  ClipboardList, Download, FileClock, FilePlus2, FileText, FileUp, FolderOpen, Gauge, History,
-  ImagePlus, Landmark, Printer, ReceiptText, RotateCcw, Save, Search, Settings, ShieldCheck,
-  Trash2, Users, X,
+  Archive, ArrowDown, ArrowLeftRight, ArrowUp, BadgeDollarSign, Banknote, Building2, Check,
+  ChevronDown, CirclePlus, ClipboardList, Download, FileClock, FilePlus2, FileText, FileUp,
+  FolderOpen, Gauge, History, ImagePlus, Landmark, Printer, ReceiptText, RotateCcw, Save,
+  Search, Settings, ShieldCheck, Trash2, Users, X,
 } from "lucide-react";
 import type {
   BusinessSettings, Customer, CustomerSummary, DocumentDraft, DocumentFilters, DocumentItem,
-  DocumentRecord, DocumentType, TaxSettings, WordFileRecord,
+  DocumentRecord, DocumentType, FileCategoryRecord, ManagedFileRecord, TaxSettings,
 } from "../shared/types";
 
-type Page = "dashboard" | "documents" | "customers" | "shop" | "tax" | "backup" | "wordFiles";
+type Page = "dashboard" | "documents" | "customers" | "shop" | "tax" | "backup" | "files";
 type LineDraft = DocumentDraft["items"][number];
 const emptyBusiness: BusinessSettings = {
   name: "", address: "", phone: "", email: "", website: "", rc: "", nif: "", nis: "", ai: "",
@@ -57,9 +57,14 @@ export function App() {
   const [cancelTarget, setCancelTarget] = useState<DocumentRecord | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [customerDocuments, setCustomerDocuments] = useState<DocumentRecord[]>([]);
-  const [wordFiles, setWordFiles] = useState<WordFileRecord[]>([]);
-  const [wordQuery, setWordQuery] = useState("");
-  const [wordDisplayName, setWordDisplayName] = useState("");
+  const [managedFiles, setManagedFiles] = useState<ManagedFileRecord[]>([]);
+  const [fileCategories, setFileCategories] = useState<FileCategoryRecord[]>([]);
+  const [fileQuery, setFileQuery] = useState("");
+  const [fileCategoryFilter, setFileCategoryFilter] = useState("");
+  const [fileDisplayName, setFileDisplayName] = useState("");
+  const [uploadCategoryId, setUploadCategoryId] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [fileSort, setFileSort] = useState<"newest" | "name">("newest");
 
   async function loadAll() {
     setLoading(true);
@@ -83,14 +88,19 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [filters, customerQuery, page]);
   useEffect(() => {
-    if (page !== "wordFiles") return;
+    if (page !== "files") return;
     const timer = window.setTimeout(() => {
-      window.appApi.listWordFiles(wordQuery)
-        .then(setWordFiles)
-        .catch((reason) => setError(messageOf(reason)));
+      Promise.all([
+        window.appApi.listFileCategories(),
+        window.appApi.listFiles(fileQuery, fileCategoryFilter ? Number(fileCategoryFilter) : null),
+      ]).then(([categories, files]) => {
+        setFileCategories(categories);
+        setManagedFiles(files);
+        setUploadCategoryId((current) => current || String(categories[0]?.id ?? ""));
+      }).catch((reason) => setError(messageOf(reason)));
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [wordQuery, page]);
+  }, [fileQuery, fileCategoryFilter, page]);
 
   function messageOf(reason: unknown) {
     return reason instanceof Error ? reason.message : String(reason);
@@ -154,25 +164,48 @@ export function App() {
     setCustomerDocuments((await window.appApi.listDocuments({ search: customer.name, type: "", status: "", from: "", to: "" }))
       .filter((document) => document.customer_id === customer.id));
   }
-  async function uploadWordFile() {
-    const file = await run(() => window.appApi.uploadWordFile(wordDisplayName));
+  async function uploadManagedFile() {
+    if (!uploadCategoryId) {
+      setError("أضف تصنيفاً قبل رفع الملفات.");
+      return;
+    }
+    const file = await run(() => window.appApi.uploadFile(fileDisplayName, Number(uploadCategoryId)));
     if (file) {
-      setWordDisplayName("");
-      setWordFiles(await window.appApi.listWordFiles(wordQuery));
-      setNotice("تم حفظ ملف Word محلياً.");
+      setFileDisplayName("");
+      setManagedFiles(await window.appApi.listFiles(fileQuery, fileCategoryFilter ? Number(fileCategoryFilter) : null));
+      setNotice("تم حفظ الملف محلياً.");
     }
   }
-  async function renameWordFile(id: number, displayName: string) {
-    const file = await run(() => window.appApi.renameWordFile(id, displayName));
+  async function renameManagedFile(id: number, displayName: string) {
+    const file = await run(() => window.appApi.renameFile(id, displayName));
     if (file) {
-      setWordFiles(await window.appApi.listWordFiles(wordQuery));
+      setManagedFiles(await window.appApi.listFiles(fileQuery, fileCategoryFilter ? Number(fileCategoryFilter) : null));
       setNotice("تم تحديث اسم الملف.");
       return true;
     }
     return false;
   }
-  async function downloadWordFile(id: number) {
-    const destination = await run(() => window.appApi.downloadWordFile(id));
+  async function setManagedFileCategory(id: number, categoryId: number) {
+    const file = await run(() => window.appApi.setFileCategory(id, categoryId));
+    if (file) setManagedFiles(await window.appApi.listFiles(fileQuery, fileCategoryFilter ? Number(fileCategoryFilter) : null));
+  }
+  async function addFileCategory() {
+    const category = await run(() => window.appApi.addFileCategory(newCategoryName), "تمت إضافة التصنيف.");
+    if (category) {
+      setNewCategoryName("");
+      setFileCategories(await window.appApi.listFileCategories());
+      setUploadCategoryId(String(category.id));
+    }
+  }
+  async function reorderFileCategories(ids: number[]) {
+    try {
+      await window.appApi.reorderFileCategories(ids);
+      setFileCategories(await window.appApi.listFileCategories());
+      setError("");
+    } catch (reason) { setError(messageOf(reason)); }
+  }
+  async function downloadManagedFile(id: number) {
+    const destination = await run(() => window.appApi.downloadFile(id));
     if (destination) setNotice(`تم حفظ نسخة الملف في: ${destination}`);
   }
 
@@ -189,7 +222,7 @@ export function App() {
     { key: "customers", label: "العملاء", icon: Users },
     { key: "shop", label: "معلومات المحل", icon: Building2 },
     { key: "tax", label: "الضرائب والترقيم", icon: Settings },
-    { key: "wordFiles", label: "ملفات Word", icon: FileUp },
+    { key: "files", label: "الملفات", icon: FolderOpen },
     { key: "backup", label: "النسخ الاحتياطي", icon: ShieldCheck },
   ];
 
@@ -220,9 +253,13 @@ export function App() {
             onOpen={openDocument} />}
           {page === "shop" && <ShopSettings business={business} setBusiness={setBusiness} onSave={saveBusiness} onImage={chooseImage} />}
           {page === "tax" && <TaxSettingsPage tax={tax} setTax={setTax} sequences={sequences} setSequences={setSequences} onSaveTax={saveTax} onSaveSequences={saveSequenceSettings} />}
-          {page === "wordFiles" && <WordFilesPage files={wordFiles} query={wordQuery} setQuery={setWordQuery}
-            displayName={wordDisplayName} setDisplayName={setWordDisplayName} onUpload={uploadWordFile}
-            onRename={renameWordFile} onDownload={downloadWordFile} />}
+          {page === "files" && <FilesPage files={managedFiles} categories={fileCategories} query={fileQuery}
+            setQuery={setFileQuery} categoryFilter={fileCategoryFilter} setCategoryFilter={setFileCategoryFilter}
+            displayName={fileDisplayName} setDisplayName={setFileDisplayName} uploadCategoryId={uploadCategoryId}
+            setUploadCategoryId={setUploadCategoryId} newCategoryName={newCategoryName} setNewCategoryName={setNewCategoryName}
+            sort={fileSort} setSort={setFileSort} onUpload={uploadManagedFile} onAddCategory={addFileCategory}
+            onReorderCategories={reorderFileCategories} onRename={renameManagedFile}
+            onSetCategory={setManagedFileCategory} onDownload={downloadManagedFile} />}
           {page === "backup" && <BackupPage onError={(message) => setError(message)} onNotice={setNotice} />}
         </>}
       </section>
@@ -262,7 +299,7 @@ export function App() {
 }
 
 function pageTitle(page: Page) {
-  return ({ dashboard: "لوحة التحكم", documents: "إدارة المستندات", customers: "قاعدة بيانات العملاء", shop: "معلومات المحل", tax: "الضرائب والترقيم", backup: "النسخ الاحتياطي", wordFiles: "ملفات Word" })[page];
+  return ({ dashboard: "لوحة التحكم", documents: "إدارة المستندات", customers: "قاعدة بيانات العملاء", shop: "معلومات المحل", tax: "الضرائب والترقيم", backup: "النسخ الاحتياطي", files: "الملفات" })[page];
 }
 
 function Dashboard({ counts, documents, go, onOpen, onNew }: {
@@ -626,53 +663,105 @@ function BackupPage({ onError, onNotice }: { onError: (message: string) => void;
   </div>;
 }
 
-function WordFilesPage({ files, query, setQuery, displayName, setDisplayName, onUpload, onRename, onDownload }: {
-  files: WordFileRecord[];
+function FilesPage({ files, categories, query, setQuery, categoryFilter, setCategoryFilter, displayName, setDisplayName,
+  uploadCategoryId, setUploadCategoryId, newCategoryName, setNewCategoryName, sort, setSort, onUpload, onAddCategory,
+  onReorderCategories, onRename, onSetCategory, onDownload }: {
+  files: ManagedFileRecord[];
+  categories: FileCategoryRecord[];
   query: string;
   setQuery: (value: string) => void;
+  categoryFilter: string;
+  setCategoryFilter: (value: string) => void;
   displayName: string;
   setDisplayName: (value: string) => void;
+  uploadCategoryId: string;
+  setUploadCategoryId: (value: string) => void;
+  newCategoryName: string;
+  setNewCategoryName: (value: string) => void;
+  sort: "newest" | "name";
+  setSort: (value: "newest" | "name") => void;
   onUpload: () => void;
+  onAddCategory: () => void;
+  onReorderCategories: (ids: number[]) => void;
   onRename: (id: number, name: string) => Promise<boolean>;
+  onSetCategory: (id: number, categoryId: number) => void;
   onDownload: (id: number) => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
+  const visibleCategories = categoryFilter
+    ? categories.filter((category) => String(category.id) === categoryFilter)
+    : categories;
+  const groupedFiles = visibleCategories.map((category) => ({
+    category,
+    files: files.filter((file) => file.category_id === category.id).sort((a, b) =>
+      sort === "name" ? a.display_name.localeCompare(b.display_name, "ar") : b.created_at.localeCompare(a.created_at)),
+  }));
 
   return <div className="stack">
     <div className="panel word-upload-panel">
       <div className="word-intro">
         <span className="word-icon"><FileText size={22} /></span>
-        <div><h2>حفظ مستندات Word محلياً</h2><p>ارفع ملفات DOC أو DOCX، أضف اسماً واضحاً، ثم نزّل نسخة منها عند الحاجة.</p></div>
+        <div><h2>حفظ الملفات محلياً</h2><p>ارفع ملفات Word أو PDF أو Excel، صنّفها ورتّبها، ثم نزّل نسخة عند الحاجة.</p></div>
       </div>
-      <div className="word-upload-controls">
-        <Field label="اسم الملف داخل التطبيق"><input required maxLength={150} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="مثال: نموذج طلب خدمة" /></Field>
-        <button className="button primary" disabled={!displayName.trim()} onClick={onUpload}><FileUp size={17} /> اختيار ملف Word ورفعه</button>
+      <div className="file-upload-grid">
+        <Field label="اسم الملف داخل التطبيق"><input required maxLength={150} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="مثال: طلب شراء شهر نوفمبر" /></Field>
+        <Field label="التصنيف"><select value={uploadCategoryId} onChange={(event) => setUploadCategoryId(event.target.value)}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></Field>
+        <button className="button primary" disabled={!displayName.trim() || !uploadCategoryId} onClick={onUpload}><FileUp size={17} /> اختيار ملف ورفعه</button>
       </div>
-      <div className="info-note"><ShieldCheck size={17} /><span>تُنسخ الملفات إلى مجلد بيانات التطبيق الدائم، وتُضمّن في النسخ الاحتياطية. الأنواع المدعومة: ‎.doc و‎.docx.</span></div>
+      <div className="info-note"><ShieldCheck size={17} /><span>تُحفظ الملفات في مجلد بيانات التطبيق وتُضمّن في النسخ الاحتياطية. الصيغ المدعومة: DOC، DOCX، PDF، XLS، XLSX.</span></div>
+    </div>
+    <div className="panel category-manager">
+      <div className="panel-heading"><div><h3>التصنيفات</h3><p>أضف تصنيفاتك ثم استخدم الأسهم لتحديد ترتيب ظهورها.</p></div></div>
+      <div className="category-add-row"><div className="search-box category-name-box"><input value={newCategoryName} maxLength={60} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="اسم تصنيف جديد…" /></div>
+        <button className="button outline small" disabled={!newCategoryName.trim()} onClick={onAddCategory}><CirclePlus size={15} /> إضافة تصنيف</button>
+      </div>
+      <div className="category-order-list">{categories.map((category, index) => <div className="category-order-item" key={category.id}>
+        <span className="category-count">{category.file_count}</span><b>{category.name}</b>
+        <div className="category-order-actions"><button title="تحريك لأعلى" disabled={index === 0} onClick={() => {
+          const ids = categories.map((item) => item.id);
+          [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+          onReorderCategories(ids);
+        }}><ArrowUp size={14} /></button><button title="تحريك لأسفل" disabled={index === categories.length - 1} onClick={() => {
+          const ids = categories.map((item) => item.id);
+          [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
+          onReorderCategories(ids);
+        }}><ArrowDown size={14} /></button></div>
+      </div>)}</div>
     </div>
     <div className="panel">
-      <div className="panel-heading"><div><h3>الملفات المحفوظة</h3><p>{files.length} ملف في النتائج · لا تُرفع الملفات إلى الإنترنت</p></div>
-        <div className="search-box word-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث بالاسم…" /></div>
+      <div className="panel-heading file-list-heading"><div><h3>أرشيف الملفات</h3><p>{files.length} ملف في النتائج · البيانات محفوظة على هذا الجهاز</p></div>
+        <div className="file-list-filters">
+          <div className="search-box word-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث بالاسم…" /></div>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">كل التصنيفات</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+          <select value={sort} onChange={(event) => setSort(event.target.value as "newest" | "name")}><option value="newest">الأحدث أولاً</option><option value="name">ترتيب الاسم</option></select>
+        </div>
       </div>
-      {files.length === 0 ? <div className="empty-state"><FileText size={25} /><b>لا توجد ملفات Word</b><span>اختر ملفاً وأضفه من النموذج أعلاه.</span></div> :
-        <div className="word-file-list">{files.map((file) => <div className="word-file-row" key={file.id}>
-          <span className="word-extension">{file.extension.slice(1).toUpperCase()}</span>
-          <div className="word-file-details">
-            {editingId === file.id ? <input className="word-name-input" aria-label="الاسم الجديد" autoFocus maxLength={150} value={editingName} onChange={(event) => setEditingName(event.target.value)} /> :
-              <b>{file.display_name}.{file.extension.slice(1)}</b>}
-            <small>{file.original_name} · {formatBytes(file.size_bytes)} · {formatDate(file.created_at)}</small>
-          </div>
-          <div className="word-file-actions">
-            {editingId === file.id ? <>
-              <button className="button primary small" disabled={!editingName.trim()} onClick={async () => {
-                if (await onRename(file.id, editingName)) setEditingId(null);
-              }}><Save size={14} /> حفظ الاسم</button>
-              <button className="button subtle small" onClick={() => setEditingId(null)}>إلغاء</button>
-            </> : <button className="button outline small" onClick={() => { setEditingId(file.id); setEditingName(file.display_name); }}>إعادة التسمية</button>}
-            <button className="button outline small" onClick={() => onDownload(file.id)}><Download size={15} /> تنزيل نسخة</button>
-          </div>
-        </div>)}</div>}
+      {files.length === 0 ? <div className="empty-state"><FileText size={25} /><b>لا توجد ملفات مطابقة</b><span>ارفع ملفاً أو غيّر التصنيف المحدد.</span></div> :
+        <div className="file-category-groups">{groupedFiles.map(({ category, files: categoryFiles }) => <section className="file-category-group" key={category.id}>
+          <div className="file-category-title"><h4>{category.name}</h4><span>{categoryFiles.length} ملف</span></div>
+          {categoryFiles.length === 0 ? <div className="empty-category">لا توجد ملفات في هذا التصنيف بعد.</div> :
+            <div className="word-file-list">{categoryFiles.map((file) => <div className="word-file-row" key={file.id}>
+              <span className={`word-extension ext-${file.extension.slice(1)}`}>{file.extension.slice(1).toUpperCase()}</span>
+              <div className="word-file-details">
+                {editingId === file.id ? <input className="word-name-input" aria-label="الاسم الجديد" autoFocus maxLength={150} value={editingName} onChange={(event) => setEditingName(event.target.value)} /> :
+                  <b>{file.display_name}.{file.extension.slice(1)}</b>}
+                <small>{file.original_name} · {formatBytes(file.size_bytes)} · {formatDate(file.created_at)}</small>
+              </div>
+              <select className="file-row-category" aria-label="تصنيف الملف" value={file.category_id} onChange={(event) => onSetCategory(file.id, Number(event.target.value))}>
+                {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <div className="word-file-actions">
+                {editingId === file.id ? <>
+                  <button className="button primary small" disabled={!editingName.trim()} onClick={async () => {
+                    if (await onRename(file.id, editingName)) setEditingId(null);
+                  }}><Save size={14} /> حفظ الاسم</button>
+                  <button className="button subtle small" onClick={() => setEditingId(null)}>إلغاء</button>
+                </> : <button className="button outline small" onClick={() => { setEditingId(file.id); setEditingName(file.display_name); }}>إعادة التسمية</button>}
+                <button className="button outline small" onClick={() => onDownload(file.id)}><Download size={15} /> تنزيل</button>
+              </div>
+            </div>)}</div>}
+        </section>)}</div>}
     </div>
   </div>;
 }

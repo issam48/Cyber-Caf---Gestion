@@ -100,6 +100,29 @@ CREATE TABLE IF NOT EXISTS word_documents (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_word_documents_name ON word_documents(display_name);
+CREATE TABLE IF NOT EXISTS file_categories (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
+  created_at TEXT NOT NULL
+);
+INSERT OR IGNORE INTO file_categories(id, name, sort_order, created_at)
+VALUES (1, 'غير مصنف', 0, datetime('now'));
+CREATE TABLE IF NOT EXISTS managed_files (
+  id INTEGER PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  stored_name TEXT NOT NULL UNIQUE,
+  extension TEXT NOT NULL CHECK (extension IN ('.doc', '.docx', '.pdf', '.xls', '.xlsx')),
+  category_id INTEGER NOT NULL DEFAULT 1 REFERENCES file_categories(id),
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_managed_files_name ON managed_files(display_name);
+CREATE INDEX IF NOT EXISTS idx_managed_files_category ON managed_files(category_id);
+INSERT OR IGNORE INTO managed_files(id, display_name, original_name, stored_name, extension, category_id, size_bytes, created_at)
+SELECT id, display_name, original_name, stored_name, extension, 1, size_bytes, created_at
+FROM word_documents;
 `;
 
 export interface DatabaseContext {
@@ -121,13 +144,13 @@ export function openDatabase(userDataPath: string): DatabaseContext {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   const version = db.pragma("user_version", { simple: true }) as number;
-  if (version > 2) {
+  if (version > 3) {
     db.close();
     throw new Error(`قاعدة البيانات بإصدار أحدث غير مدعوم: ${version}.`);
   }
   const migrate = db.transaction(() => {
     db.exec(schema);
-    db.pragma("user_version = 2");
+    db.pragma("user_version = 3");
   });
   migrate();
   const insertSequence = db.prepare(

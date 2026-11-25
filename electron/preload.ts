@@ -27,10 +27,14 @@ const api: AppApi = {
   createBackup: () => ipcRenderer.invoke("backup:create"),
   restoreBackup: () => ipcRenderer.invoke("backup:restore"),
   openDataFolder: () => ipcRenderer.invoke("data:open-folder"),
-  listWordFiles: (search) => ipcRenderer.invoke("word-files:list", search),
-  uploadWordFile: (displayName) => ipcRenderer.invoke("word-files:upload", displayName),
-  renameWordFile: (id, displayName) => ipcRenderer.invoke("word-files:rename", id, displayName),
-  downloadWordFile: (id) => ipcRenderer.invoke("word-files:download", id),
+  listFiles: (search, categoryId) => ipcRenderer.invoke("files:list", search, categoryId),
+  listFileCategories: () => ipcRenderer.invoke("files:categories"),
+  addFileCategory: (name) => ipcRenderer.invoke("files:add-category", name),
+  reorderFileCategories: (ids) => ipcRenderer.invoke("files:reorder-categories", ids),
+  uploadFile: (displayName, categoryId) => ipcRenderer.invoke("files:upload", displayName, categoryId),
+  renameFile: (id, displayName) => ipcRenderer.invoke("files:rename", id, displayName),
+  setFileCategory: (id, categoryId) => ipcRenderer.invoke("files:set-category", id, categoryId),
+  downloadFile: (id) => ipcRenderer.invoke("files:download", id),
 };
 
 contextBridge.exposeInMainWorld("appApi", api);

@@ -10,8 +10,10 @@ import type {
   DocumentItem,
   DocumentRecord,
   DocumentType,
+  FileCategoryRecord,
+  ManagedFileExtension,
+  ManagedFileRecord,
   TaxSettings,
-  WordFileRecord,
 } from "../shared/types";
 import { documentTypes, type DatabaseContext } from "./database";
 
@@ -404,24 +406,72 @@ export class BusinessService {
     return target;
   }
 
-  listWordFiles(search: string): WordFileRecord[] {
+  listFiles(search: string, categoryId: number | null): ManagedFileRecord[] {
     const query = `%${search.trim()}%`;
+    const categoryClause = categoryId === null ? "" : "AND m.category_id=?";
+    const values: Array<string | number> = [query, query];
+    if (categoryId !== null) {
+      if (!Number.isInteger(categoryId) || categoryId < 1) throw new Error("التصنيف المحدد غير صالح.");
+      values.push(categoryId);
+    }
     return this.context.db.prepare(
-      `SELECT id,display_name,original_name,extension,size_bytes,created_at
-      FROM word_documents WHERE display_name LIKE ? OR original_name LIKE ?
-      ORDER BY created_at DESC, id DESC LIMIT 1000`,
-    ).all(query, query) as WordFileRecord[];
+      `SELECT m.id,m.display_name,m.original_name,m.extension,m.category_id,c.name AS category_name,m.size_bytes,m.created_at
+      FROM managed_files m JOIN file_categories c ON c.id=m.category_id
+      WHERE (m.display_name LIKE ? OR m.original_name LIKE ?) ${categoryClause}
+      ORDER BY c.sort_order, m.created_at DESC, m.id DESC LIMIT 2000`,
+    ).all(...values) as ManagedFileRecord[];
   }
 
-  addWordFile(sourcePath: string, requestedName: string): WordFileRecord {
-    const extension = path.extname(sourcePath).toLowerCase();
-    if (extension !== ".doc" && extension !== ".docx") {
-      throw new Error("الصيغ المدعومة هي Word فقط: DOC وDOCX.");
+  listFileCategories(): FileCategoryRecord[] {
+    return this.context.db.prepare(
+      `SELECT c.id,c.name,c.sort_order,COUNT(m.id) AS file_count
+      FROM file_categories c LEFT JOIN managed_files m ON m.category_id=c.id
+      GROUP BY c.id ORDER BY c.sort_order,c.name COLLATE NOCASE`,
+    ).all() as FileCategoryRecord[];
+  }
+
+  addFileCategory(requestedName: string): FileCategoryRecord {
+    const name = this.cleanCategoryName(requestedName);
+    if (this.context.db.prepare("SELECT id FROM file_categories WHERE name=? COLLATE NOCASE").get(name)) {
+      throw new Error("يوجد تصنيف بهذا الاسم.");
     }
+    const nextOrder = this.context.db.prepare(
+      "SELECT COALESCE(MAX(sort_order),-1)+1 AS next_order FROM file_categories",
+    ).get() as { next_order: number };
+    const result = this.context.db.prepare(
+      "INSERT INTO file_categories(name,sort_order,created_at) VALUES(?,?,?)",
+    ).run(name, nextOrder.next_order, now());
+    return this.context.db.prepare(
+      `SELECT c.id,c.name,c.sort_order,COUNT(m.id) AS file_count
+      FROM file_categories c LEFT JOIN managed_files m ON m.category_id=c.id
+      WHERE c.id=? GROUP BY c.id`,
+    ).get(result.lastInsertRowid) as FileCategoryRecord;
+  }
+
+  reorderFileCategories(ids: number[]): void {
+    const categories = this.listFileCategories();
+    if (ids.length !== categories.length || new Set(ids).size !== ids.length ||
+        ids.some((id) => !categories.some((category) => category.id === id))) {
+      throw new Error("تعذر ترتيب التصنيفات؛ حدّث القائمة وحاول مجدداً.");
+    }
+    const update = this.context.db.prepare("UPDATE file_categories SET sort_order=? WHERE id=?");
+    const operation = this.context.db.transaction(() => {
+      ids.forEach((id, index) => update.run(index, id));
+    });
+    operation();
+  }
+
+  addManagedFile(sourcePath: string, requestedName: string, categoryId: number): ManagedFileRecord {
+    const extension = path.extname(sourcePath).toLowerCase();
+    const supportedExtensions: ManagedFileExtension[] = [".doc", ".docx", ".pdf", ".xls", ".xlsx"];
+    if (!supportedExtensions.some((supported) => supported === extension)) throw new Error("الصيغ المدعومة هي Word وPDF وExcel.");
     const stat = fs.statSync(sourcePath);
     if (!stat.isFile()) throw new Error("الملف المحدد ليس ملفاً صالحاً.");
+    if (!this.context.db.prepare("SELECT id FROM file_categories WHERE id=?").get(categoryId)) {
+      throw new Error("التصنيف المحدد غير موجود.");
+    }
     const originalName = path.basename(sourcePath);
-    const displayName = this.cleanWordDisplayName(requestedName, extension) ||
+    const displayName = this.cleanDisplayName(requestedName, extension) ||
       path.basename(originalName, extension);
     if (!displayName) throw new Error("اسم الملف مطلوب.");
     const storedName = `${randomUUID()}${extension}`;
@@ -429,48 +479,68 @@ export class BusinessService {
     fs.copyFileSync(sourcePath, destination);
     try {
       const result = this.context.db.prepare(
-        `INSERT INTO word_documents(display_name,original_name,stored_name,extension,size_bytes,created_at)
-        VALUES(?,?,?,?,?,?)`,
-      ).run(displayName, originalName, storedName, extension, stat.size, now());
-      return this.getWordFile(Number(result.lastInsertRowid))!;
+        `INSERT INTO managed_files(display_name,original_name,stored_name,extension,category_id,size_bytes,created_at)
+        VALUES(?,?,?,?,?,?,?)`,
+      ).run(displayName, originalName, storedName, extension, categoryId, stat.size, now());
+      return this.getManagedFile(Number(result.lastInsertRowid))!;
     } catch (error) {
       fs.rmSync(destination, { force: true });
       throw error;
     }
   }
 
-  renameWordFile(id: number, requestedName: string): WordFileRecord {
-    const file = this.getWordFile(id);
-    if (!file) throw new Error("ملف Word غير موجود.");
-    const displayName = this.cleanWordDisplayName(requestedName, file.extension);
+  renameManagedFile(id: number, requestedName: string): ManagedFileRecord {
+    const file = this.getManagedFile(id);
+    if (!file) throw new Error("الملف غير موجود.");
+    const displayName = this.cleanDisplayName(requestedName, file.extension);
     if (!displayName) throw new Error("اسم الملف مطلوب.");
-    this.context.db.prepare("UPDATE word_documents SET display_name=? WHERE id=?").run(displayName, id);
-    return this.getWordFile(id)!;
+    this.context.db.prepare("UPDATE managed_files SET display_name=? WHERE id=?").run(displayName, id);
+    return this.getManagedFile(id)!;
   }
 
-  copyWordFile(id: number, destination: string): string {
+  setManagedFileCategory(id: number, categoryId: number): ManagedFileRecord {
+    if (!this.getManagedFile(id)) throw new Error("الملف غير موجود.");
+    if (!this.context.db.prepare("SELECT id FROM file_categories WHERE id=?").get(categoryId)) {
+      throw new Error("التصنيف المحدد غير موجود.");
+    }
+    const result = this.context.db.prepare(
+      "UPDATE managed_files SET category_id=? WHERE id=?",
+    ).run(categoryId, id);
+    if (result.changes === 0) throw new Error("لم يتغير تصنيف الملف.");
+    return this.getManagedFile(id)!;
+  }
+
+  copyManagedFile(id: number, destination: string): string {
     const file = this.context.db.prepare(
-      "SELECT stored_name FROM word_documents WHERE id=?",
+      "SELECT stored_name FROM managed_files WHERE id=?",
     ).get(id) as { stored_name: string } | undefined;
-    if (!file) throw new Error("ملف Word غير موجود.");
+    if (!file) throw new Error("الملف غير موجود.");
     const source = path.join(this.context.wordDocumentsPath, file.stored_name);
     if (!fs.existsSync(source)) throw new Error("الملف محفوظ في السجل لكن محتواه غير موجود على القرص.");
     fs.copyFileSync(source, destination);
     return destination;
   }
 
-  getWordFile(id: number): WordFileRecord | null {
+  getManagedFile(id: number): ManagedFileRecord | null {
     return (this.context.db.prepare(
-      `SELECT id,display_name,original_name,extension,size_bytes,created_at
-      FROM word_documents WHERE id=?`,
-    ).get(id) as WordFileRecord | undefined) ?? null;
+      `SELECT m.id,m.display_name,m.original_name,m.extension,m.category_id,c.name AS category_name,m.size_bytes,m.created_at
+      FROM managed_files m JOIN file_categories c ON c.id=m.category_id WHERE m.id=?`,
+    ).get(id) as ManagedFileRecord | undefined) ?? null;
   }
 
-  private cleanWordDisplayName(value: string, extension: string): string {
+  private cleanDisplayName(value: string, extension: string): string {
     const withoutExtension = value.trim().replace(new RegExp(`${extension.replace(".", "\\.")}$`, "i"), "").trim();
     if (withoutExtension.length > 150) throw new Error("اسم الملف طويل جداً (الحد الأقصى 150 حرفاً).");
     if (/[\u0000-\u001f]/.test(withoutExtension)) throw new Error("اسم الملف يحتوي على محارف غير صالحة.");
     return withoutExtension;
+  }
+
+  private cleanCategoryName(value: string): string {
+    const name = value.trim();
+    if (!name || name.length > 60 || /[\u0000-\u001f]/.test(name)) {
+      throw new Error("اسم التصنيف مطلوب ويجب ألا يتجاوز 60 حرفاً.");
+    }
+    return name;
   }
 
   private validateBusiness(): void {

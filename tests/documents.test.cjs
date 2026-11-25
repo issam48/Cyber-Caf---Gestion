@@ -148,18 +148,29 @@ test("Word files are stored locally, renamed and copied back with their original
   const { service, context } = setup();
   const source = path.join(context.userDataPath, "original.docx");
   fs.writeFileSync(source, "word document bytes");
-  const uploaded = service.addWordFile(source, "نموذج تسجيل");
+  const uploaded = service.addManagedFile(source, "نموذج تسجيل", 1);
   assert.equal(uploaded.display_name, "نموذج تسجيل");
   assert.equal(uploaded.extension, ".docx");
-  assert.equal(service.listWordFiles("تسجيل").length, 1);
-  const renamed = service.renameWordFile(uploaded.id, "استمارة العميل");
+  assert.equal(service.listFiles("تسجيل", null).length, 1);
+  const renamed = service.renameManagedFile(uploaded.id, "استمارة العميل");
   assert.equal(renamed.display_name, "استمارة العميل");
   const download = path.join(context.userDataPath, "downloaded.docx");
-  service.copyWordFile(uploaded.id, download);
+  service.copyManagedFile(uploaded.id, download);
   assert.equal(fs.readFileSync(download, "utf8"), "word document bytes");
-  const unsupported = path.join(context.userDataPath, "unsupported.pdf");
-  fs.writeFileSync(unsupported, "not a Word file");
-  assert.throws(() => service.addWordFile(unsupported, "غير مدعوم"), /DOC وDOCX/);
+  const unsupported = path.join(context.userDataPath, "unsupported.txt");
+  fs.writeFileSync(unsupported, "not a supported document");
+  const category = service.addFileCategory("جداول Excel");
+  const spreadsheet = path.join(context.userDataPath, "table.xlsx");
+  fs.writeFileSync(spreadsheet, "excel bytes");
+  const excelFile = service.addManagedFile(spreadsheet, "جدول الخدمات", category.id);
+  assert.equal(excelFile.extension, ".xlsx");
+  assert.equal(service.listFiles("", category.id)[0].id, excelFile.id);
+  service.reorderFileCategories([category.id, 1]);
+  assert.equal(service.listFileCategories()[0].id, category.id);
+  assert.throws(() => service.addManagedFile(unsupported, "غير مدعوم", 1), /Word وPDF وExcel/);
+  const pdfPath = path.join(context.userDataPath, "guide.pdf");
+  fs.writeFileSync(pdfPath, "pdf bytes");
+  assert.equal(service.addManagedFile(pdfPath, "دليل PDF", 1).extension, ".pdf");
 });
 
 test("backup contains persistent SQLite data and passes integrity verification", () => {
@@ -168,7 +179,7 @@ test("backup contains persistent SQLite data and passes integrity verification",
   fs.writeFileSync(path.join(context.attachmentsPath, "logo.png"), Buffer.from("local attachment"));
   const wordSource = path.join(context.userDataPath, "backup.docx");
   fs.writeFileSync(wordSource, "backup word content");
-  service.addWordFile(wordSource, "ملف محفوظ");
+  service.addManagedFile(wordSource, "ملف محفوظ", 1);
   const target = path.join(context.userDataPath, "backup-test");
   createBackupFolder(context, target);
   verifyBackup(target);
@@ -187,8 +198,37 @@ test("backup contains persistent SQLite data and passes integrity verification",
   const restoredService = new BusinessService(restoredContext);
   assert.equal(restoredService.listDocuments({ search: "", type: "", status: "", from: "", to: "" }).length, 1);
   assert.equal(fs.readFileSync(path.join(restoredContext.attachmentsPath, "logo.png"), "utf8"), "local attachment");
-  const restoredWordFile = restoredService.listWordFiles("ملف محفوظ")[0];
+  const restoredWordFile = restoredService.listFiles("ملف محفوظ", null)[0];
   const restoredWordPath = path.join(restoredContext.userDataPath, "restored.docx");
-  restoredService.copyWordFile(restoredWordFile.id, restoredWordPath);
+  restoredService.copyManagedFile(restoredWordFile.id, restoredWordPath);
   assert.equal(fs.readFileSync(restoredWordPath, "utf8"), "backup word content");
+});
+
+test("database migration keeps existing Word files in the default category", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "cafe-legacy-files-"));
+  temporaryFolders.push(folder);
+  fs.mkdirSync(path.join(folder, "attachments", "word_documents"), { recursive: true });
+  const legacyDocumentPath = path.join(folder, "attachments", "word_documents", "saved.docx");
+  fs.writeFileSync(legacyDocumentPath, "legacy word data");
+  const legacyDatabase = new (require("better-sqlite3"))(path.join(folder, "business.sqlite"));
+  legacyDatabase.exec(`
+    CREATE TABLE word_documents (
+      id INTEGER PRIMARY KEY, display_name TEXT NOT NULL, original_name TEXT NOT NULL,
+      stored_name TEXT NOT NULL UNIQUE, extension TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    INSERT INTO word_documents VALUES (9, 'قديم', 'saved.docx', 'saved.docx', '.docx', 16, '2026-01-01T00:00:00.000Z');
+    PRAGMA user_version = 2;
+  `);
+  legacyDatabase.close();
+  const context = openDatabase(folder);
+  openContexts.push(context);
+  const service = new BusinessService(context);
+  const migrated = service.listFiles("", null);
+  assert.equal(migrated.length, 1);
+  assert.equal(migrated[0].display_name, "قديم");
+  assert.equal(migrated[0].category_name, "غير مصنف");
+  const copy = path.join(folder, "migrated.docx");
+  service.copyManagedFile(migrated[0].id, copy);
+  assert.equal(fs.readFileSync(copy, "utf8"), "legacy word data");
 });

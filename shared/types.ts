@@ -122,11 +122,22 @@ export interface CustomerSummary {
   balance_total: number;
 }
 
-export interface WordFileRecord {
+export type ManagedFileExtension = ".doc" | ".docx" | ".pdf" | ".xls" | ".xlsx";
+
+export interface FileCategoryRecord {
+  id: number;
+  name: string;
+  sort_order: number;
+  file_count: number;
+}
+
+export interface ManagedFileRecord {
   id: number;
   display_name: string;
   original_name: string;
-  extension: ".doc" | ".docx";
+  extension: ManagedFileExtension;
+  category_id: number;
+  category_name: string;
   size_bytes: number;
   created_at: string;
 }
@@ -157,10 +168,14 @@ export interface AppApi {
   createBackup(): Promise<string | null>;
   restoreBackup(): Promise<void>;
   openDataFolder(): Promise<void>;
-  listWordFiles(search: string): Promise<WordFileRecord[]>;
-  uploadWordFile(displayName: string): Promise<WordFileRecord | null>;
-  renameWordFile(id: number, displayName: string): Promise<WordFileRecord>;
-  downloadWordFile(id: number): Promise<string | null>;
+  listFiles(search: string, categoryId: number | null): Promise<ManagedFileRecord[]>;
+  listFileCategories(): Promise<FileCategoryRecord[]>;
+  addFileCategory(name: string): Promise<FileCategoryRecord>;
+  reorderFileCategories(ids: number[]): Promise<void>;
+  uploadFile(displayName: string, categoryId: number): Promise<ManagedFileRecord | null>;
+  renameFile(id: number, displayName: string): Promise<ManagedFileRecord>;
+  setFileCategory(id: number, categoryId: number): Promise<ManagedFileRecord>;
+  downloadFile(id: number): Promise<string | null>;
 }
 
 declare global {
