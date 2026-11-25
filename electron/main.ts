@@ -109,9 +109,14 @@ function formatDate(value: string): string {
 async function printDocument(id: number, exportPdf: boolean): Promise<string | null> {
   const document = service.getDocument(id);
   if (!document) throw new Error("Document introuvable.");
-  const printWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  const printDirectory = fs.mkdtempSync(path.join(app.getPath("temp"), "cyber-cafe-print-"));
+  const htmlPath = path.join(printDirectory, "document.html");
+  let printWindow: BrowserWindow | null = null;
   try {
-    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderDocument(document))}`);
+    fs.writeFileSync(htmlPath, renderDocument(document), "utf8");
+    const documentWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+    printWindow = documentWindow;
+    await documentWindow.loadFile(htmlPath);
     if (exportPdf) {
       const { canceled, filePath } = await dialog.showSaveDialog(mainWindow!, {
         title: "Exporter le document en PDF",
@@ -119,18 +124,19 @@ async function printDocument(id: number, exportPdf: boolean): Promise<string | n
         filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (canceled || !filePath) return null;
-      const pdf = await printWindow.webContents.printToPDF({ pageSize: "A4", printBackground: true });
+      const pdf = await documentWindow.webContents.printToPDF({ pageSize: "A4", printBackground: true });
       fs.writeFileSync(filePath, pdf);
       return filePath;
     }
     return await new Promise<string | null>((resolve, reject) => {
-      printWindow.webContents.print({ printBackground: true }, (success, failureReason) => {
+      documentWindow.webContents.print({ printBackground: true }, (success, failureReason) => {
         if (success) resolve("printed");
         else reject(new Error(failureReason || "تعذرت طباعة المستند."));
       });
     });
   } finally {
-    printWindow.close();
+    if (printWindow && !printWindow.isDestroyed()) printWindow.close();
+    fs.rmSync(printDirectory, { recursive: true, force: true });
   }
 }
 
