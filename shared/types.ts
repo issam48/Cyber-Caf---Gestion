@@ -174,7 +174,7 @@ export interface AppApi {
   addPayment(value: { invoice_id: number; amount: number; method: string; date: string }): Promise<DocumentRecord>;
   getHistory(id: number): Promise<Array<{ action: string; reason: string; created_at: string }>>;
   printDocument(id: number, exportPdf: boolean): Promise<string | null>;
-  exportDocumentWord(id: number): Promise<string | null>;
+  openDocumentWord(id: number): Promise<void>;
   createBackup(): Promise<string | null>;
   restoreBackup(): Promise<void>;
   openDataFolder(): Promise<void>;

@@ -211,9 +211,8 @@ export function App() {
   async function openManagedFile(id: number) {
     await run(() => window.appApi.openFile(id));
   }
-  async function exportDocumentWord(id: number) {
-    const destination = await run(() => window.appApi.exportDocumentWord(id));
-    if (destination) setNotice(`تم حفظ نسخة Word في: ${destination}`);
+  async function openDocumentWord(id: number) {
+    await run(() => window.appApi.openDocumentWord(id), "تم فتح المستند في تطبيق Word الافتراضي.");
   }
 
   const counts = useMemo(() => ({
@@ -286,7 +285,7 @@ export function App() {
     {showCustomerForm && <CustomerForm value={customerForm} setValue={setCustomerForm} onSave={saveCustomerForm} onClose={() => setShowCustomerForm(false)} />}
     {selectedDocument && <DocumentDetails document={selectedDocument} history={history} relatedDocuments={relatedDocuments} onOpenRelated={openDocument} onClose={() => setSelectedDocument(null)}
       onPrint={(exportPdf) => run(() => window.appApi.printDocument(selectedDocument.id, exportPdf), exportPdf ? "تم تصدير PDF." : "تم إرسال المستند للطباعة.")}
-      onExportWord={() => exportDocumentWord(selectedDocument.id)}
+      onExportWord={() => openDocumentWord(selectedDocument.id)}
       onIssue={() => actAndRefresh(() => window.appApi.issueDocument(selectedDocument.id), "تم إصدار المستند.")}
       onConvert={() => actAndRefresh(() => window.appApi.convertProforma(selectedDocument.id), "تم تحويل الفاتورة الأولية إلى فاتورة.")}
       onDuplicate={async () => {
@@ -695,7 +694,7 @@ function DocumentDetails({ document, history, relatedDocuments, onOpenRelated, o
   const typeEn: Record<string, string> = { INVOICE: "FACTURE", PROFORMA: "FACTURE PROFORMA", QUOTE: "DEVIS", PURCHASE_ORDER: "BON DE COMMANDE", RECEIPT: "REÇU DE PAIEMENT", CREDIT_NOTE: "AVOIR" };
   return <Modal title={`تفاصيل ${typeLabel(document.type)}`} onClose={onClose} wide>
     <div className="detail-toolbar"><div><span className="document-number-large">{document.number ?? "مسودة"}</span><span className={`status-pill status-${document.status.toLowerCase()}`}>{statusNames[document.status]}</span></div>
-      <div className="button-row"><button className="button outline small" onClick={() => onPrint(true)}><Printer size={15} /> PDF</button><button className="button outline small" onClick={onExportWord}><Download size={15} /> Word</button><button className="button outline small" onClick={() => onPrint(false)}><Printer size={15} /> طباعة</button>
+      <div className="button-row"><button className="button outline small" onClick={() => onPrint(true)}><Printer size={15} /> PDF</button><button className="button outline small" onClick={onExportWord}><Download size={15} /> فتح Word</button><button className="button outline small" onClick={() => onPrint(false)}><Printer size={15} /> طباعة</button>
         {document.status === "DRAFT" && <button className="button primary small" onClick={onIssue}><Check size={15} /> إصدار</button>}
         {document.type === "PROFORMA" && document.status === "ISSUED" && <button className="button primary small" onClick={onConvert}><ArrowLeftRight size={15} /> تحويل إلى فاتورة</button>}
         {document.type === "INVOICE" && document.status === "ISSUED" && document.balance > 0.005 && <button className="button outline small" onClick={onPayment}><Banknote size={15} /> تسجيل دفعة</button>}

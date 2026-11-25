@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from "electron";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -154,23 +155,21 @@ function wordImage(filePath: string): WordDocumentImage | undefined {
   };
 }
 
-async function exportDocumentWord(id: number): Promise<string | null> {
+async function openDocumentWord(id: number): Promise<void> {
   const document = service.getDocument(id);
   if (!document) throw new Error("Document introuvable.");
-  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow!, {
-    title: "حفظ المستند بصيغة Word",
-    defaultPath: `${document.number ?? "document"}.docx`,
-    filters: [{ name: "Microsoft Word", extensions: ["docx"] }],
-  });
-  if (canceled || !filePath) return null;
   const business = JSON.parse(document.business_snapshot) as BusinessSettings;
   const buffer = await createWordDocument(document, {
     logo: wordImage(business.logo_path),
     signature: wordImage(business.signature_path),
   });
-  const destination = path.extname(filePath).toLowerCase() === ".docx" ? filePath : `${filePath}.docx`;
-  fs.writeFileSync(destination, buffer);
-  return destination;
+  const wordDirectory = path.join(app.getPath("temp"), "cyber-cafe-word");
+  fs.mkdirSync(wordDirectory, { recursive: true });
+  const safeNumber = (document.number ?? `document-${id}`).replace(/[<>:"/\\|?*]/g, "_");
+  const wordPath = path.join(wordDirectory, `${safeNumber}-${randomUUID()}.docx`);
+  fs.writeFileSync(wordPath, buffer);
+  const error = await shell.openPath(wordPath);
+  if (error) throw new Error(`تعذر فتح المستند في تطبيق Word الافتراضي: ${error}`);
 }
 
 function registerHandlers(): void {
@@ -201,7 +200,7 @@ function registerHandlers(): void {
   ipcMain.handle("payments:add", (_event, value) => service.addPayment(value));
   ipcMain.handle("documents:history", (_event, id: number) => service.getHistory(id));
   ipcMain.handle("documents:print", (_event, id: number, exportPdf: boolean) => printDocument(id, exportPdf));
-  ipcMain.handle("documents:export-word", (_event, id: number) => exportDocumentWord(id));
+  ipcMain.handle("documents:open-word", (_event, id: number) => openDocumentWord(id));
   ipcMain.handle("data:open-folder", () => shell.openPath(context.userDataPath));
   ipcMain.handle("backup:create", async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow!, {
